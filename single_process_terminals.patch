@@ -1,4 +1,4 @@
-From 160481b9922acb5f183bc5cb2af675cdc508db0c Mon Sep 17 00:00:00 2001
+From dbc75061996c3c969c5aa88e53914d09138f7e08 Mon Sep 17 00:00:00 2001
 From: Jan Palus <atler@pld-linux.org>
 Date: Wed, 13 Jan 2021 01:57:44 +0100
 Subject: [PATCH] add support for single process terminals
@@ -9,22 +9,23 @@ requires 1:1 mapping between PID and window id. If present use WINDOWID
 environment variable set by those terminals as a direct pointer to
 window which should be target for displayed image.
 ---
- ueberzug/xutil.py | 24 +++++++++++++++++++-----
- 1 file changed, 19 insertions(+), 5 deletions(-)
+ ueberzug/xutil.py | 45 +++++++++++++++++++++++++++++++--------------
+ 1 file changed, 31 insertions(+), 14 deletions(-)
 
 diff --git a/ueberzug/xutil.py b/ueberzug/xutil.py
-index 2c6c871..6864aa4 100644
+index 2c6c871..ec09fb5 100644
 --- a/ueberzug/xutil.py
 +++ b/ueberzug/xutil.py
-@@ -1,6 +1,7 @@
+@@ -1,6 +1,8 @@
  """This module contains x11 utils"""
++from collections import defaultdict
  import functools
  import asyncio
 +import os
  
  import Xlib
  import Xlib.display as Xdisplay
-@@ -84,6 +85,16 @@ def get_pid_by_window_id(display: Xdisplay.Display, window_id: int):
+@@ -84,6 +86,16 @@ def get_pid_by_window_id(display: Xdisplay.Display, window_id: int):
              else None)
  
  
@@ -41,7 +42,7 @@ index 2c6c871..6864aa4 100644
  def get_pid_window_id_map():
      """Determines the pid of each mapped window.
  
-@@ -92,11 +103,7 @@ def get_pid_window_id_map():
+@@ -92,18 +104,13 @@ def get_pid_window_id_map():
      """
      with get_display() as display:
          root = display.screen().root
@@ -50,24 +51,45 @@ index 2c6c871..6864aa4 100644
 -                display.intern_atom('_NET_CLIENT_LIST'),
 -                Xlib.X.AnyPropertyType)
 -             .value)
+-        return {**{
+-            get_pid_by_window_id(display, window.id): window.id
+-            for window in root.query_tree().children
+-        }, **{
+-            get_pid_by_window_id(display, window_id): window_id
+-            for window_id in visible_window_ids
+-        }}
 +        visible_window_ids = get_visible_window_ids(display)
-         return {**{
-             get_pid_by_window_id(display, window.id): window.id
-             for window in root.query_tree().children
-@@ -159,6 +166,13 @@ def get_parent_window_infos():
-     Returns:
-         list of TerminalWindowInfo
-     """
-+
-+    window_id = os.getenv('WINDOWID')
-+
-+    if window_id and window_id.isnumeric() and int(window_id) in get_visible_window_ids():
-+        pty = get_first_pty(get_parent_pids(process.get_own_pid()))
-+        return [TerminalWindowInfo(int(window_id), pty)]
-+
-     window_infos = []
-     client_pids = {}
++        pid_to_win_id = defaultdict(set)
++        { pid_to_win_id[get_pid_by_window_id(display, window.id)].add(window.id)
++            for window in root.query_tree().children }
++        { pid_to_win_id[get_pid_by_window_id(display, window_id)].add(window_id)
++            for window_id in visible_window_ids }
++        return pid_to_win_id
  
+ 
+ def sort_by_key_list(mapping: dict, key_list: list):
+@@ -174,9 +181,19 @@ def get_parent_window_infos():
+             ppids = get_parent_pids(pid)
+             ppid_window_id_map = key_intersection(pid_window_id_map, ppids)
+             try:
+-                window_pid, window_id = next(iter(sort_by_key_list(
++                pid, window_ids = next(iter(sort_by_key_list(
+                     ppid_window_id_map, ppids)))
+-                window_children_pids = ppids[:ppids.index(window_pid)][::-1]
++                if len(window_ids) == 1:
++                    window_id = next(iter(window_ids))
++                else:
++                    env_window_id = os.getenv('WINDOWID')
++
++                    if env_window_id and env_window_id.isnumeric() and int(env_window_id) in get_visible_window_ids():
++                        window_id = int(env_window_id)
++                    else:
++                        window_id = next(iter(window_ids))
++
++                window_children_pids = ppids[:ppids.index(pid)][::-1]
+                 pty = get_first_pty(window_children_pids)
+                 window_infos.append(TerminalWindowInfo(window_id, pty))
+             except StopIteration:
 -- 
 2.30.0
 
