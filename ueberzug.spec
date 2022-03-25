@@ -1,7 +1,7 @@
 Summary:	Command line util which allows to draw images on terminals
 Name:		ueberzug
 Version:	18.1.9
-Release:	3
+Release:	4
 License:	GPL v3+
 Group:		X11/Applications/Graphics
 Source0:	https://github.com/seebye/ueberzug/archive/%{version}/%{name}-%{version}.tar.gz 
