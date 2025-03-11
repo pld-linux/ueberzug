@@ -22,7 +22,7 @@ terminals by using child windows.
 
 %prep
 %setup -q
-%patch0 -p1
+%patch -P 0 -p1
 
 %build
 %py3_build
